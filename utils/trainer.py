@@ -1,0 +1,231 @@
+from utils import *
+from models import *
+from copy import deepcopy
+from dataclasses import dataclass
+import torch
+import tqdm
+import time
+
+@dataclass
+class TrainingDebugInfo:
+    """单个报告周期的详细调试信息"""
+    data_wait_time: float = 0.0
+    zero_grad_time: float = 0.0
+    get_loss_time: float = 0.0
+    backward_time: float = 0.0
+    step_time: float = 0.0
+    eval_time: float = 0.0
+    other_time: float = 0.0
+
+def train_epoch(
+    datahandler: DataHandler, 
+    optimizer: torch.optim.Optimizer, 
+    model: TrainableModelBase,
+    verbose: bool = False
+) -> tuple[float, TrainingDebugInfo]:
+    model.train()
+    total_loss = 0.0
+    num_batches = 0
+    debug_info = TrainingDebugInfo()
+    epoch_start = time.time()
+
+    def _sync_cuda():
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+    dataloader = datahandler.get_train_dataloader(shuffle=True)
+    data_iter = iter(dataloader)
+    while True:
+        fetch_start = time.time()
+        try:
+            batch = next(data_iter)
+        except StopIteration:
+            break
+        debug_info.data_wait_time += time.time() - fetch_start
+
+        if verbose:
+            # 梯度清零
+            _sync_cuda()
+            zero_grad_start = time.time()
+            optimizer.zero_grad(set_to_none=True)
+            _sync_cuda()
+            debug_info.zero_grad_time += time.time() - zero_grad_start
+            
+            # 前向传播计算loss
+            _sync_cuda()
+            get_loss_start = time.time()
+            loss = model.get_loss(
+                user_index=batch['user_index'],
+                pos_item_index=batch['pos_item_index'],
+                neg_item_indices=batch['neg_item_indices']
+            )
+            _sync_cuda()
+            debug_info.get_loss_time += time.time() - get_loss_start
+            
+            # 反向传播
+            _sync_cuda()
+            backward_start = time.time()
+            loss.backward()
+            _sync_cuda()
+            debug_info.backward_time += time.time() - backward_start
+            
+            # 优化器步进
+            _sync_cuda()
+            step_start = time.time()
+            optimizer.step()
+            _sync_cuda()
+            debug_info.step_time += time.time() - step_start
+        else:
+            # 快速路径：不记录调试信息
+            optimizer.zero_grad(set_to_none=True)
+            loss = model.get_loss(
+                user_index=batch['user_index'],
+                pos_item_index=batch['pos_item_index'],
+                neg_item_indices=batch['neg_item_indices']
+            )
+            loss.backward()
+            optimizer.step()
+        
+        total_loss += loss.item()
+        num_batches += 1
+    
+    avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+    epoch_total = time.time() - epoch_start
+    measured = (
+        debug_info.data_wait_time
+        + debug_info.zero_grad_time
+        + debug_info.get_loss_time
+        + debug_info.backward_time
+        + debug_info.step_time
+    )
+    debug_info.other_time = max(epoch_total - measured, 0.0)
+    
+    return avg_loss, debug_info
+
+def train_model(
+    datahandler: DataHandler,
+    metric: Metric,
+    model: TrainableModelBase,
+    num_epochs: int = 3000,
+    num_steps: int = 20,
+    patience_steps: int = 5,
+    primary_metric: str = 'NDCG@20',
+    verbose: bool = True,
+) -> dict:
+    """
+    训练推荐模型
+    
+    Args:
+        datahandler: 数据处理器
+        metric: 评估指标
+        model: 训练模型
+        num_epochs: 训练轮数
+        num_steps: 报告间隔（每 num_epochs//num_steps 轮报告一次）
+        patience_steps: 早停耐心值
+        primary_metric: 主要优化指标
+        verbose: 是否打印详细的调试信息
+        
+    Returns:
+        最终测试结果
+    """
+    optimizer = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()), 
+        lr=1e-3, weight_decay=1e-4
+    )
+    best_state_dict = None
+    now_patience = 0
+    
+    # 初始化：打印初始模型性能
+    model.eval()
+    print(f"Initial Model Performance (Before Training):")
+    initial_validation_result = model.test(metric=metric, test_rate_matrix=datahandler.valid_rate_matrix)
+    best_validation_result = initial_validation_result
+    print("  " + ", ".join([f"{k}: {v:.4f}" for k, v in initial_validation_result.items()]))
+    
+    report_interval = max(1, num_epochs // num_steps)
+    epoch_start_time = time.time()
+    accumulated_debug_info = TrainingDebugInfo()  # 累积report周期内的时间
+
+    for epoch in range(num_epochs):
+        avg_loss, debug_info = train_epoch(
+            datahandler, 
+            optimizer, 
+            model,
+            verbose=verbose
+        )
+        
+        # 累积debug信息
+        accumulated_debug_info.data_wait_time += debug_info.data_wait_time
+        accumulated_debug_info.zero_grad_time += debug_info.zero_grad_time
+        accumulated_debug_info.get_loss_time += debug_info.get_loss_time
+        accumulated_debug_info.backward_time += debug_info.backward_time
+        accumulated_debug_info.step_time += debug_info.step_time
+        accumulated_debug_info.other_time += debug_info.other_time
+        
+        # 定期验证和报告
+        if (epoch + 1) % report_interval == 0 or epoch == num_epochs - 1:
+            model.eval()
+            eval_start = time.time()
+            validation_result = model.test(metric=metric, test_rate_matrix=datahandler.valid_rate_matrix)
+            accumulated_debug_info.eval_time += time.time() - eval_start
+            epoch_elapsed = time.time() - epoch_start_time
+            
+            # 单行报告：epoch、loss、时间、指标
+            metrics_str = ", ".join([f"{k}: {v:.4f}" for k, v in validation_result.items()])
+            known = (
+                accumulated_debug_info.data_wait_time
+                + accumulated_debug_info.zero_grad_time
+                + accumulated_debug_info.get_loss_time
+                + accumulated_debug_info.backward_time
+                + accumulated_debug_info.step_time
+                + accumulated_debug_info.eval_time
+            )
+            residual_other = max(epoch_elapsed - known, 0.0)
+            time_breakdown = (
+                f"Data:{accumulated_debug_info.data_wait_time:.1f}s "
+                f"ZG:{accumulated_debug_info.zero_grad_time:.1f}s "
+                f"Loss:{accumulated_debug_info.get_loss_time:.1f}s "
+                f"BW:{accumulated_debug_info.backward_time:.1f}s "
+                f"Step:{accumulated_debug_info.step_time:.1f}s "
+                f"Eval:{accumulated_debug_info.eval_time:.1f}s "
+                f"Other:{residual_other:.1f}s"
+            ) if verbose else ""
+            time_str = f"Time: {epoch_elapsed:.1f}s {time_breakdown}"
+            print(f"Epoch [{epoch+1:>5d}/{num_epochs}]  Loss: {avg_loss:.4f}  {time_str}  {metrics_str}")
+            
+            # 清理CUDA缓存
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
+            
+            # 早停逻辑
+            if validation_result[primary_metric] > best_validation_result[primary_metric]:
+                best_validation_result = deepcopy(validation_result)
+                best_state_dict = deepcopy(model.state_dict())
+                now_patience = 0
+            else:
+                now_patience += 1
+                if now_patience > patience_steps:
+                    print(f"\n{'='*80}")
+                    print(f"Early stopping at epoch {epoch+1}")
+                    print(f"Best validation results:")
+                    print(f"  " + ", ".join([f"{k}: {v:.4f}" for k, v in best_validation_result.items()]))
+                    print(f"{'='*80}")
+                    break
+            
+            # 重置epoch时钟和累积信息
+            epoch_start_time = time.time()
+            accumulated_debug_info = TrainingDebugInfo()
+
+    # 加载最优模型并测试
+    print(f"\nLoading best model and evaluating on test set...")
+    model.load_state_dict(best_state_dict)
+    test_result = model.test(metric=metric, test_rate_matrix=datahandler.test_rate_matrix)
+    print(f"{'='*80}")
+    print(f"Final test results:")
+    print(f"  " + ", ".join([f"{k}: {v:.4f}" for k, v in test_result.items()]))
+    print(f"{'='*80}")
+    return test_result
+
+
+

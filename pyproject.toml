@@ -1,0 +1,27 @@
+[project]
+name = "unispecrec"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=7.2.0",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+    "scipy>=1.17.1",
+    "torch>=2.5.1",
+    "tqdm>=4.67.3",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu121"  # 名字可以自定义，建议包含版本号
+url = "https://download.pytorch.org/whl/cu121" # 这里的 cu121 换成你需要的版本
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu121" },
+]
+torchvision = [
+  { index = "pytorch-cu121" },
+]
