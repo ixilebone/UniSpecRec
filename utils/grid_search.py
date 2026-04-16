@@ -1,6 +1,6 @@
 import sys
 sys.path.append("..")
-from utils import DataLoader, Metric, find_best_result_from_results_list
+from utils import DataHandler, Metric, find_best_result_from_results_list
 import torch
 import tqdm
 
@@ -68,72 +68,61 @@ class MatrixNormalization:
         return methods.get(method_name, MatrixNormalization.direct_combine)
 
 
-def _search_best_gamma(
-    pred_matrix_1,
-    pred_matrix_2,
-    rate_matrix,
-    test_rate_matrix,
-    normalization_method,
-    metric = Metric(device="cuda"),
-) -> tuple[float, dict[str, float]]:
-    """
-    搜索最优的gamma参数来加权两个预测矩阵
-    
-    Args:
-        pred_matrix_1: 第一个预测矩阵
-        pred_matrix_2: 第二个预测矩阵
-        rate_matrix: 训练集评分矩阵
-        test_rate_matrix: 测试集评分矩阵
-        normalization_method: 矩阵处理方法，选项为 'direct', 'max', 'minmax', 'zscore', 'l2', 'softmax'
-    
-    Returns:
-        best_gamma: 最优的gamma值
-        best_result: 最优的评估结果
-    """
-    normalize_fn = MatrixNormalization.get_method(normalization_method)
-    
-    # 对两个矩阵进行归一化处理
-    norm_pred_matrix_1 = normalize_fn(pred_matrix_1)
-    norm_pred_matrix_2 = normalize_fn(pred_matrix_2)
-    
-    gamma_list = [i*0.01 for i in range(101)]
-    results = []
-    for gamma in gamma_list:
-        pred_matrix = (1 - gamma) * norm_pred_matrix_1 + gamma * norm_pred_matrix_2
-        results.append(metric.eval(train_matrix=rate_matrix, test_matrix=test_rate_matrix, pred_matrix=pred_matrix))
-    
-    index, best_result = find_best_result_from_results_list(results)
-    best_gamma = gamma_list[index]
-    return best_gamma, best_result
 
 
-def grid_search_hyperparamters(
-        cf_pred_matrix,
-        dataloader,
-        normalization_method='zscore'
+
+def grid_search_unispecrec_hyperparamters(
+    cf_pred_matrix: torch.Tensor,
+    datahandler: DataHandler,
+    metric: Metric,
+    normalization_method='zscore',
+    eval_rate_matrix: torch.Tensor = None,
+    show_progress: bool = True,
 ) -> tuple[float, float, dict[str, float]]:
-    """
-    搜索最优超参数
+    def _search_best_gamma(
+        pred_matrix_1: torch.Tensor,
+        pred_matrix_2: torch.Tensor,
+        rate_matrix: torch.Tensor,
+        test_rate_matrix: torch.Tensor,
+        normalization_method: str,
+        metric: Metric,
+    ) -> tuple[float, dict[str, float]]:
+        normalize_fn = MatrixNormalization.get_method(normalization_method)
+        
+        # 对两个矩阵进行归一化处理
+        norm_pred_matrix_1 = normalize_fn(pred_matrix_1)
+        norm_pred_matrix_2 = normalize_fn(pred_matrix_2)
+        
+        gamma_list = [i*0.01 for i in range(101)]
+        results = []
+        for gamma in gamma_list:
+            pred_matrix = (1 - gamma) * norm_pred_matrix_1 + gamma * norm_pred_matrix_2
+            results.append(metric.eval(train_matrix=rate_matrix, test_matrix=test_rate_matrix, pred_matrix=pred_matrix))
+        
+        index, best_result = find_best_result_from_results_list(results)
+        best_gamma = gamma_list[index]
+        return best_gamma, best_result
     
-    Args:
-        normalization_method: 矩阵归一化方法 ('direct', 'max', 'minmax', 'zscore', 'l2', 'softmax')
-    """
+    if eval_rate_matrix is None:
+        eval_rate_matrix = datahandler.test_rate_matrix
 
-    (U, S, V_T) = torch.linalg.svd(torch.cat([dataloader.user_semantic_embeddings, dataloader.item_semantic_embeddings], dim=0))
-    
+    (U, S, V_T) = torch.linalg.svd(torch.cat([datahandler.user_semantic_embeddings, datahandler.item_semantic_embeddings], dim=0))
+
     power_list = [i*0.01 for i in range(0, 101, 5)]
 
     results = []
     best_gammas = []
     powers = []
-    for power in tqdm.tqdm(power_list):
-        se_pred_matrix = U[:dataloader.num_users, :len(S)] * torch.pow(S, power) @ (U[dataloader.num_users:, :len(S)] * torch.pow(S, power)).T
+    power_iter = tqdm.tqdm(power_list) if show_progress else power_list
+    for power in power_iter:
+        se_pred_matrix = U[:datahandler.num_users, :len(S)] * torch.pow(S, power) @ (U[datahandler.num_users:, :len(S)] * torch.pow(S, power)).T
         best_gamma, best_result = _search_best_gamma(
             pred_matrix_1=cf_pred_matrix,
             pred_matrix_2=se_pred_matrix,
-            rate_matrix=dataloader.rate_matrix,
-            test_rate_matrix=dataloader.test_rate_matrix,
+            rate_matrix=datahandler.rate_matrix,
+            test_rate_matrix=eval_rate_matrix,
             normalization_method=normalization_method,
+            metric=metric,
         )
         results.append(best_result)
         best_gammas.append(best_gamma)

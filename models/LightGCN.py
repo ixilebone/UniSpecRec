@@ -107,8 +107,9 @@ class LightGCN(TrainableModelBase):
 		adj_matrix: torch.sparse_coo_tensor,  # Now sparse format
 		embedding: torch.Tensor,
 	) -> torch.Tensor:
-		# Use sparse matrix multiplication
-		return torch.sparse.mm(adj_matrix, embedding)
+		# Use sparse matrix multiplication (float32 only - sparse.mm doesn't support half)
+		with torch.amp.autocast('cuda', enabled=False):
+			return torch.sparse.mm(adj_matrix.float(), embedding.float())
 	
 	def _get_propagated_embeddings(self) -> tuple[torch.Tensor, torch.Tensor]:
 		"""

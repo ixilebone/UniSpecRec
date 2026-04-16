@@ -35,7 +35,7 @@ class AlphaRec(TrainableModelBase):
 
         self.adapter = self._build_adapter()
         self._init_weights()
-    
+
     def _build_adapter(self):
         embed_size = self.user_semantic_embeddings.shape[1]
         return nn.Sequential(
@@ -51,21 +51,22 @@ class AlphaRec(TrainableModelBase):
                 nn.init.xavier_uniform_(module.weight)
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
-    
+
     def _propagate(
         self,
         adj_matrix: torch.Tensor,
         embedding: torch.Tensor
     ) -> torch.Tensor:
-        return torch.spmm(adj_matrix, embedding)
-    
+        # torch.sparse.mm 不支持 float16，禁用 autocast 用 float32 计算
+        with torch.amp.autocast('cuda', enabled=False):
+            return torch.sparse.mm(adj_matrix.float(), embedding.float())
+
     def _create_norm_adj_matrix(self, rate_matrix: torch.Tensor) -> torch.Tensor:
-		
         num_users = self.user_size
         num_items = self.item_size
 
-        user_degree = rate_matrix.sum(dim=1)  # [num_users]
-        item_degree = rate_matrix.sum(dim=0)  # [num_items]
+        user_degree = rate_matrix.sum(dim=1)
+        item_degree = rate_matrix.sum(dim=0)
 
         user_degree_inv_sqrt = torch.where(
             user_degree > 0,
@@ -77,22 +78,35 @@ class AlphaRec(TrainableModelBase):
             1.0 / torch.sqrt(item_degree),
             torch.zeros_like(item_degree)
         )
-		
-        # 归一化交互矩阵: D_u^{-1/2} R D_i^{-1/2}
+
         norm_R = user_degree_inv_sqrt.unsqueeze(1) * rate_matrix * item_degree_inv_sqrt.unsqueeze(0)
 
-        top = torch.cat([
-            torch.zeros(num_users, num_users, device=rate_matrix.device),
-            norm_R
-        ], dim=1)
-        bottom = torch.cat([
-            norm_R.t(),
-            torch.zeros(num_items, num_items, device=rate_matrix.device)
-        ], dim=1)
-        norm_adj = torch.cat([top, bottom], dim=0)
+        indices_R = norm_R.nonzero(as_tuple=True)
+        values_R = norm_R[indices_R]
 
-        return norm_adj
-    
+        indices_ui_row = indices_R[0]
+        indices_ui_col = indices_R[1] + num_users
+
+        indices_iu_row = indices_R[1] + num_users
+        indices_iu_col = indices_R[0]
+
+        all_indices = torch.cat([
+            torch.stack([indices_ui_row, indices_ui_col], dim=0),
+            torch.stack([indices_iu_row, indices_iu_col], dim=0)
+        ], dim=1)
+        all_values = torch.cat([values_R, values_R])
+
+        total_size = num_users + num_items
+        norm_adj = torch.sparse_coo_tensor(
+            all_indices,
+            all_values,
+            (total_size, total_size),
+            device=rate_matrix.device,
+            dtype=rate_matrix.dtype
+        )
+
+        return norm_adj.coalesce()
+
     def forward(
         self,
         user_index: torch.Tensor, # shape: (batch_size,)
@@ -116,7 +130,7 @@ class AlphaRec(TrainableModelBase):
         item_embedding = final_item_embedding[item_index]
 
         return user_embedding, item_embedding
-        
+
     @torch.no_grad()
     def predict(self) -> torch.Tensor:
         user_embedding, item_embedding = self.forward(

@@ -24,7 +24,8 @@ model = AlphaRec(
     model_config=AlphaRec.ModelConfig(
         num_layers=2,
         latent_dim=32,
-        device=DEVICE
+        device=DEVICE,
+        similarity='dot'
     ),
     loss_config=AlphaRec.InfoNCELossConfig(
         type='infonce',
@@ -49,5 +50,6 @@ train(
     model=model,
     num_epochs=100,
     verbose=True,  # 打印每个epoch的调试信息
+    use_amp=False
 )
 """输入python -m scripts.AlphaRec"""

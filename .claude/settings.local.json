@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xxd \"c:/Users/LEbon/Desktop/UniSpecRec/models/LightGCN.py\")",
+      "Bash(curl:*)"
+    ]
+  }
+}

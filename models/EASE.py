@@ -42,12 +42,12 @@ class EASE(ModelBase):
         pred_matrix = self.rate_matrix @ self.item_weights
         return pred_matrix
 
-from utils import DataLoader, Metric
+from utils import DataHandler, Metric
 import matplotlib.pyplot as plt
 import tqdm
 
 def test_ease_by_regu_lambda(device: str = 'cpu'):
-    dataloader = DataLoader(
+    datahandler = DataHandler(
         interaction_data="games",
         semantic_data=None,
         device=device,
@@ -57,10 +57,10 @@ def test_ease_by_regu_lambda(device: str = 'cpu'):
     regu_lambdas = range(1, 401, 1)
     results = None
     for regu_lambda in tqdm.tqdm(regu_lambdas):
-        ease_model = EASE(rate_matrix=dataloader.rate_matrix, model_config=EASE.ModelConfig(regu_lambda=regu_lambda, device=device))
+        ease_model = EASE(rate_matrix=datahandler.rate_matrix, model_config=EASE.ModelConfig(regu_lambda=regu_lambda, device=device))
 
         
-        test_rate_matrix = dataloader.test_rate_matrix
+        test_rate_matrix = datahandler.test_rate_matrix
 
         score = ease_model.test(metric, test_rate_matrix)
         if results is None:

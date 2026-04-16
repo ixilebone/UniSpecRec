@@ -69,14 +69,14 @@ class MF(ModelBase):
 
 
 # 测试代码
-from utils import DataLoader, Metric
+from utils import DataHandler, Metric
 import matplotlib.pyplot as plt
 import tqdm
 
 
 def test_mf_by_embedding_dim(device: str = 'cpu'):
     """测试不同嵌入维度对性能的影响"""
-    dataloader = DataLoader(
+    datahandler = DataHandler(
         interaction_data="games",
         semantic_data=None,
         device=device,
@@ -88,11 +88,11 @@ def test_mf_by_embedding_dim(device: str = 'cpu'):
     
     for embedding_dim in tqdm.tqdm(embedding_dims):
         mf_model = MF(
-            rate_matrix=dataloader.rate_matrix,
+            rate_matrix=datahandler.rate_matrix,
             model_config=MF.ModelConfig(embedding_dim=embedding_dim, device=device)
         )
         
-        test_rate_matrix = dataloader.test_rate_matrix
+        test_rate_matrix = datahandler.test_rate_matrix
         score = mf_model.test(metric, test_rate_matrix)
         
         if results is None:
