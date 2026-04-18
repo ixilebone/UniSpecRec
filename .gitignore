@@ -11,3 +11,5 @@ wheels/
 
 # Data files (too large for GitHub)
 data/
+
+.claude
