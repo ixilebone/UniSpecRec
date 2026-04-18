@@ -1,4 +1,4 @@
-from .base import TrainableModelBase
+from .base import TrainableModelBase, ModelBase
 from .EASE import EASE
 from .AlphaRec import AlphaRec
 from .LightGCN import LightGCN
