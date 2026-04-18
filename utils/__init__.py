@@ -13,8 +13,8 @@ from .utils import (
     results_dict_to_results_list,
 )
 from .grid_search import grid_search_unispecrec_hyperparamters, MatrixNormalization
-from .trainer import train_model as train
-from .trainer import train_unispecrec as train_unispecrec
+from .trainer import train_model
+from .trainer import train_unispecrec
 
 __all__ = [
     "DataHandler",
@@ -28,6 +28,6 @@ __all__ = [
     "results_list_to_results_dict",
     "results_dict_to_results_list",
     "grid_search_unispecrec_hyperparamters",
-    "train",
+    "train_model",
     "train_unispecrec",
 ]

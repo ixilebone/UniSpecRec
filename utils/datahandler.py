@@ -92,8 +92,8 @@ class DataHandler:
         batch_size: int = 32,
         num_neg_item: int = 64,
         check_conflict: bool = False,
-        num_workers: int = 4,
-        seed: int | None = None
+        num_workers: int = 16,
+        seed: int | None = 42
     ):
         self.device = device
         self.batch_size = batch_size
