@@ -2,6 +2,7 @@ import torch
 import pickle
 import scipy.sparse
 import numpy as np
+import math
 from typing import Literal
 
 def load_tensor_from_pickle(path: str, device: str='cpu') -> torch.Tensor:
@@ -83,6 +84,74 @@ class NegSamplingCollate:
         }
 
 
+class FastNegSamplingDataLoader:
+    """直接在 CPU Tensor 上按批采样，绕过 DataLoader/collate 的进程与 Python 调度开销。"""
+
+    def __init__(
+        self,
+        edge_users: torch.Tensor,
+        edge_items: torch.Tensor,
+        num_items: int,
+        batch_size: int,
+        num_neg_item: int,
+        shuffle: bool,
+        pin_memory: bool = True,
+        generator: torch.Generator | None = None
+    ):
+        self.edge_users = edge_users
+        self.edge_items = edge_items
+        self.num_items = num_items
+        self.batch_size = batch_size
+        self.num_neg_item = num_neg_item
+        self.shuffle = shuffle
+        self.pin_memory = pin_memory
+        self.generator = generator
+
+        self._num_edges = edge_users.shape[0]
+
+    def __len__(self) -> int:
+        if self._num_edges == 0:
+            return 0
+        return math.ceil(self._num_edges / self.batch_size)
+
+    def __iter__(self):
+        if self._num_edges == 0:
+            return
+
+        if self.shuffle:
+            order = torch.randperm(self._num_edges, generator=self.generator)
+            users = self.edge_users[order]
+            items = self.edge_items[order]
+        else:
+            users = self.edge_users
+            items = self.edge_items
+
+        for start in range(0, self._num_edges, self.batch_size):
+            end = min(start + self.batch_size, self._num_edges)
+            bs = end - start
+
+            user_index = users[start:end]
+            pos_item_index = items[start:end]
+            neg_item_indices = torch.randint(
+                0,
+                self.num_items,
+                (bs, self.num_neg_item),
+                dtype=torch.long,
+                generator=self.generator
+            )
+
+            if self.pin_memory:
+                user_index = user_index.pin_memory()
+                pos_item_index = pos_item_index.pin_memory()
+                neg_item_indices = neg_item_indices.pin_memory()
+
+            yield {
+                'user_index': user_index,
+                'pos_item_index': pos_item_index,
+                'neg_item_indices': neg_item_indices
+            }
+
+
 class DataHandler:
     def __init__(
         self,
@@ -93,6 +162,7 @@ class DataHandler:
         num_neg_item: int = 64,
         check_conflict: bool = False,
         num_workers: int = 16,
+        use_fast_sampling: bool = True,
         seed: int | None = 42
     ):
         self.device = device
@@ -101,6 +171,7 @@ class DataHandler:
         self.check_conflict = check_conflict
         self.seed = seed
         self.num_workers = num_workers
+        self.use_fast_sampling = use_fast_sampling
 
         self.project_dir = pathlib.Path(__file__).parent.parent
         self.rate_matrix_path = self.project_dir / f'data/{interaction_data}/trn_mat.pkl'
@@ -144,6 +215,10 @@ class DataHandler:
             self.item_semantic_embeddings = None
 
         self._train_dataloader = None
+        self._sample_generator = None
+        if self.seed is not None:
+            self._sample_generator = torch.Generator(device='cpu')
+            self._sample_generator.manual_seed(self.seed)
 
     def create_torch_dataloader(
         self,
@@ -170,12 +245,29 @@ class DataHandler:
             collate_fn=collate_fn
         )
 
-    def get_train_dataloader(self, shuffle: bool = True) -> TorchDataLoader:
+    def get_train_dataloader(self, shuffle: bool = True) -> TorchDataLoader | FastNegSamplingDataLoader:
         if self._train_dataloader is None:
-            self._train_dataloader = self.create_torch_dataloader(
-                rate_matrix=self.rate_matrix,
-                shuffle=shuffle
-            )
+            if self.use_fast_sampling:
+                train_dataset = InteractionDataset(
+                    rate_matrix=self.rate_matrix,
+                    check_conflict=self.check_conflict,
+                    seed=self.seed
+                )
+                self._train_dataloader = FastNegSamplingDataLoader(
+                    edge_users=train_dataset._edge_users,
+                    edge_items=train_dataset._edge_items,
+                    num_items=self.num_items,
+                    batch_size=self.batch_size,
+                    num_neg_item=self.num_neg_item,
+                    shuffle=shuffle,
+                    pin_memory=True,
+                    generator=self._sample_generator
+                )
+            else:
+                self._train_dataloader = self.create_torch_dataloader(
+                    rate_matrix=self.rate_matrix,
+                    shuffle=shuffle
+                )
         return self._train_dataloader
 
     def get_info(self) -> dict:
@@ -187,5 +279,6 @@ class DataHandler:
             'num_neg_item': self.num_neg_item,
             'device': self.device,
             'semantic_data': self.semantic_data,
-            'num_workers': self.num_workers
+            'num_workers': self.num_workers,
+            'use_fast_sampling': self.use_fast_sampling
         }

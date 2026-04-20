@@ -88,17 +88,17 @@ def grid_search_unispecrec_hyperparamters(
         metric: Metric,
     ) -> tuple[float, dict[str, float]]:
         normalize_fn = MatrixNormalization.get_method(normalization_method)
-        
+
         # 对两个矩阵进行归一化处理
         norm_pred_matrix_1 = normalize_fn(pred_matrix_1)
         norm_pred_matrix_2 = normalize_fn(pred_matrix_2)
-        
-        gamma_list = [i*0.01 for i in range(101)]
+
+        gamma_list = [i * 0.01 for i in range(101)]
         results = []
         for gamma in gamma_list:
             pred_matrix = (1 - gamma) * norm_pred_matrix_1 + gamma * norm_pred_matrix_2
             results.append(metric.eval(train_matrix=rate_matrix, test_matrix=test_rate_matrix, pred_matrix=pred_matrix))
-        
+
         index, best_result = find_best_result_from_results_list(results)
         best_gamma = gamma_list[index]
         return best_gamma, best_result
@@ -106,7 +106,7 @@ def grid_search_unispecrec_hyperparamters(
     if eval_rate_matrix is None:
         eval_rate_matrix = datahandler.test_rate_matrix
 
-    (U, S, V_T) = torch.linalg.svd(torch.cat([datahandler.user_semantic_embeddings, datahandler.item_semantic_embeddings], dim=0))
+    (U, S, V_T) = torch.linalg.svd(torch.cat([datahandler.user_semantic_embeddings, datahandler.item_semantic_embeddings], dim=0), full_matrices=False)
 
     power_list = [i*0.01 for i in range(0, 101, 5)]
 
@@ -115,7 +115,7 @@ def grid_search_unispecrec_hyperparamters(
     powers = []
     power_iter = tqdm.tqdm(power_list) if show_progress else power_list
     for power in power_iter:
-        se_pred_matrix = U[:datahandler.num_users, :len(S)] * torch.pow(S, power) @ (U[datahandler.num_users:, :len(S)] * torch.pow(S, power)).T
+        se_pred_matrix = U[:datahandler.num_users, :] * torch.pow(S, power) @ (U[datahandler.num_users:, :] * torch.pow(S, power)).T
         best_gamma, best_result = _search_best_gamma(
             pred_matrix_1=cf_pred_matrix,
             pred_matrix_2=se_pred_matrix,
@@ -128,6 +128,9 @@ def grid_search_unispecrec_hyperparamters(
         best_gammas.append(best_gamma)
         powers.append(power)
         del se_pred_matrix
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     index, best_result = find_best_result_from_results_list(results)
     best_power = power_list[index]
     best_gamma = best_gammas[index]

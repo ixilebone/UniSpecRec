@@ -29,7 +29,7 @@ class UniSpecRec(ModelBase):
 
         # 预计算SVD分解
         combined = torch.cat([user_semantic_embeddings, item_semantic_embeddings], dim=0)
-        U, S, V_T = torch.linalg.svd(combined)
+        U, S, V_T = torch.linalg.svd(combined, full_matrices=False)
         self.register_buffer('svd_U', U)
         self.register_buffer('svd_S', S)
 
