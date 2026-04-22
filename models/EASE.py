@@ -6,14 +6,6 @@ class EASE(ModelBase):
     @dataclass
     class ModelConfig(ModelBase.ModelConfig):
         regu_lambda: float = 100.0
-    @classmethod
-    def get_best_model_config(cls, interaction_data: str, device: str) -> ModelConfig:
-        match interaction_data:
-            case "games":
-                return cls.ModelConfig(regu_lambda=83, device=device)
-            case _:
-                return cls.ModelConfig(regu_lambda=100.0, device=device)
-
     def __init__(
         self,
         rate_matrix: torch.Tensor,

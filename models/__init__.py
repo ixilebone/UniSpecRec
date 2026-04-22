@@ -4,6 +4,8 @@ from .AlphaRec import AlphaRec
 from .L3AE import L3AE
 from .LightGCN import LightGCN
 from .MF import MF
+from .RLMRecCon import RLMRecCon
+from .RLMRecGen import RLMRecGen
 from .SGFCF import SGFCF
 from .UniSpecRec import UniSpecRec
 
@@ -15,6 +17,8 @@ __all__ =[
     'L3AE',
     'LightGCN',
     'MF',
+    'RLMRecCon',
+    'RLMRecGen',
     'SGFCF',
     'UniSpecRec'
 ]

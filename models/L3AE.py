@@ -10,45 +10,6 @@ class L3AE(ModelBase):
 		reg_F: float = 1.0
 		reg_E: float = 1.0
 
-	@classmethod
-	def get_best_model_config(
-		cls,
-		interaction_data: str,
-		semantic_data: str,
-		device: str,
-	) -> ModelConfig:
-		match interaction_data:
-			case "games":
-				match semantic_data:
-					case "nvidia":
-						return cls.ModelConfig(reg_X=-50, reg_F=5, reg_E=150, device=device)
-					case "llama":
-						return cls.ModelConfig(reg_X=20, reg_F=0.1, reg_E=80, device=device)
-					case "qwen":
-						return cls.ModelConfig(reg_X=0, reg_F=5, reg_E=100, device=device)
-			case "toys":
-				match semantic_data:
-					case "nvidia":
-						return cls.ModelConfig(reg_X=-100, reg_F=10, reg_E=200, device=device)
-					case "llama":
-						return cls.ModelConfig(reg_X=20, reg_F=0.05, reg_E=80, device=device)
-					case "qwen":
-						return cls.ModelConfig(reg_X=-50, reg_F=10, reg_E=150, device=device)
-			case "books":
-				match semantic_data:
-					case "nvidia":
-						return cls.ModelConfig(reg_X=-100, reg_F=10, reg_E=150, device=device)
-					case "llama":
-						return cls.ModelConfig(reg_X=-50, reg_F=0.05, reg_E=100, device=device)
-					case "qwen":
-						return cls.ModelConfig(reg_X=0, reg_F=1, reg_E=50, device=device)
-			case _:
-				raise ValueError(f"Unknown interaction data: {interaction_data}")
-
-		raise ValueError(
-			f"Unknown semantic data '{semantic_data}' for interaction data '{interaction_data}'"
-		)
-
 	def __init__(
 		self,
 		rate_matrix: torch.Tensor,

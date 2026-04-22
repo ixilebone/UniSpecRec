@@ -46,7 +46,7 @@ def main(
             is_inbatch=True,
         )
     )
-    train(
+    train_model(
         datahandler=datahandler,
         metric=metric,
         model=model,

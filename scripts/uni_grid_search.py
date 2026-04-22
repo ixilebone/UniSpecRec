@@ -1,9 +1,10 @@
 import sys
 sys.path.append("..")
-from utils import DataLoader, Metric, find_best_result_from_results_list
+from utils import DataHandler, Metric, find_best_result_from_results_list
 import torch
 import tqdm
 from itertools import product
+from goodscripts.final.EASE import BEST_PARAMS as EASE_BEST_PARAMS
 
 
 # 矩阵处理方法集合
@@ -153,7 +154,7 @@ if __name__ == "__main__":
     
     print("\n=== 搜索最优超参数 ===")
     for method, interaction_data, semantic_data in product(method_list, interaction_data_list, semantic_data_list):
-        dataloader = DataLoader(
+        dataloader = DataHandler(
             interaction_data=interaction_data,
             semantic_data=semantic_data,
             device="cuda",
@@ -161,7 +162,10 @@ if __name__ == "__main__":
 
         ease_model = EASE(
             rate_matrix=dataloader.rate_matrix,
-            model_config=EASE.get_best_model_config(interaction_data=interaction_data, device="cuda")
+            model_config=EASE.ModelConfig(
+                regu_lambda=EASE_BEST_PARAMS[interaction_data]['regu_lambda'],
+                device="cuda",
+            )
         )
 
         lightgcn_model = LightGCN(
