@@ -60,7 +60,7 @@ def main(
             is_inbatch=True,
         )
     )
-    train(
+    train_model(
         datahandler=datahandler,
         metric=metric,
         model=model,
@@ -69,7 +69,7 @@ def main(
         use_amp=True
     )
 
-"""输入python -m goodscripts.final.AlphaRec"""
+"""输入python -m goodscripts.final.AlphaRec --interaction_data books --semantic_data nvidia --num_epochs 200 --device cuda"""
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="AlphaRec Training Script")

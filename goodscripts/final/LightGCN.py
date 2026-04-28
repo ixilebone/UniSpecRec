@@ -55,7 +55,7 @@ def main(
         use_amp=True
     )
 
-"""输入python -m goodscripts.final.LightGCN"""
+"""输入python -m goodscripts.final.LightGCN --interaction_data books --num_epochs 200 --device cuda"""
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="LightGCN Training Script")

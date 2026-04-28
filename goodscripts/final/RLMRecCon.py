@@ -76,7 +76,7 @@ def main(
     )
 
 
-"""输入python -m goodscripts.final.RLMRecCon"""
+"""输入python -m goodscripts.final.RLMRecCon --interaction_data books --semantic_data nvidia --num_epochs 200 --device cuda"""
 if __name__ == "__main__":
     import argparse
 
