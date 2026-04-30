@@ -7,6 +7,7 @@ from .MF import MF
 from .RLMRecCon import RLMRecCon
 from .RLMRecGen import RLMRecGen
 from .SGFCF import SGFCF
+from .SimGCL import SimGCL
 from .UniSpecRec import UniSpecRec
 
 __all__ =[
@@ -20,5 +21,6 @@ __all__ =[
     'RLMRecCon',
     'RLMRecGen',
     'SGFCF',
+    'SimGCL',
     'UniSpecRec'
 ]
