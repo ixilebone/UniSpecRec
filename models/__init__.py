@@ -1,6 +1,8 @@
 from .base import TrainableModelBase, ModelBase
 from .EASE import EASE
 from .AlphaRec import AlphaRec
+from .AlignMF import AlignMF
+from .AlignSimGCL import AlignSimGCL
 from .L3AE import L3AE
 from .LightGCN import LightGCN
 from .MF import MF
@@ -15,6 +17,8 @@ __all__ =[
     'ModelBase',
     'EASE',
     'AlphaRec',
+    'AlignMF',
+    'AlignSimGCL',
     'L3AE',
     'LightGCN',
     'MF',
